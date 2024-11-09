@@ -1,0 +1,44 @@
+# Import Libraries
+import numpy as np
+import pandas as pd
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import GradientBoostingClassifier
+from sklearn.model_selection import cross_val_score
+import os
+
+# Load Data
+train_data = pd.read_csv("/kaggle/input/titanic/train.csv")
+test_data = pd.read_csv("/kaggle/input/titanic/test.csv")
+
+# Preprocessing: Define target and features, and perform one-hot encoding
+y = train_data["Survived"]
+features = ["Pclass", "Sex", "SibSp", "Parch"]
+X = pd.get_dummies(train_data[features])
+X_test = pd.get_dummies(test_data[features])
+
+# Logistic Regression Model
+logistic_model = LogisticRegression(max_iter=1000, random_state=1)
+logistic_model.fit(X, y)
+logistic_predictions = logistic_model.predict(X_test)
+
+# Gradient Boosting Model
+gradient_boosting_model = GradientBoostingClassifier(n_estimators=100, learning_rate=0.1, max_depth=3, random_state=1)
+gradient_boosting_model.fit(X, y)
+gradient_boosting_predictions = gradient_boosting_model.predict(X_test)
+
+# Save predictions to CSV
+logistic_output = pd.DataFrame({'PassengerId': test_data.PassengerId, 'Survived': logistic_predictions})
+logistic_output.to_csv('logistic_regression_submission.csv', index=False)
+
+gradient_boosting_output = pd.DataFrame({'PassengerId': test_data.PassengerId, 'Survived': gradient_boosting_predictions})
+gradient_boosting_output.to_csv('gradient_boosting_submission.csv', index=False)
+
+# Cross-validation scores for evaluation
+logistic_cv_score = cross_val_score(logistic_model, X, y, cv=5, scoring='accuracy').mean()
+gradient_boosting_cv_score = cross_val_score(gradient_boosting_model, X, y, cv=5, scoring='accuracy').mean()
+
+# Display results
+print("Logistic Regression submission saved as logistic_regression_submission.csv")
+print("Gradient Boosting submission saved as gradient_boosting_submission.csv")
+print(f"Logistic Regression CV Accuracy: {logistic_cv_score:.4f}")
+print(f"Gradient Boosting CV Accuracy: {gradient_boosting_cv_score:.4f}")
