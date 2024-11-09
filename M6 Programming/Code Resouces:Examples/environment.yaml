@@ -1,0 +1,11 @@
+name: cosc523_proj
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10.12
+  - jupyter
+  - numpy
+  - pandas
+  - scikit-learn
+
