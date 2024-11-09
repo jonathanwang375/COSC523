@@ -3,28 +3,60 @@ import numpy as np
 import pandas as pd
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import GradientBoostingClassifier
-from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import cross_val_score, GridSearchCV
+from sklearn.preprocessing import StandardScaler
 import os
 
 # Load Data
 train_data = pd.read_csv("/kaggle/input/titanic/train.csv")
 test_data = pd.read_csv("/kaggle/input/titanic/test.csv")
 
-# Preprocessing: Define target and features, and perform one-hot encoding
-y = train_data["Survived"]
-features = ["Pclass", "Sex", "SibSp", "Parch"]
+# Feature Engineering
+# Fill missing values for 'Age' with median, 'Embarked' with mode, and 'Fare' with median
+train_data['Age'].fillna(train_data['Age'].median(), inplace=True)
+train_data['Embarked'].fillna(train_data['Embarked'].mode()[0], inplace=True)
+test_data['Age'].fillna(test_data['Age'].median(), inplace=True)
+test_data['Fare'].fillna(test_data['Fare'].median(), inplace=True)
+
+# Convert categorical features and engineer new features
+train_data['FamilySize'] = train_data['SibSp'] + train_data['Parch']
+test_data['FamilySize'] = test_data['SibSp'] + test_data['Parch']
+
+# Select features and one-hot encode categorical variables
+features = ["Pclass", "Sex", "SibSp", "Parch", "Fare", "Embarked", "FamilySize"]
 X = pd.get_dummies(train_data[features])
 X_test = pd.get_dummies(test_data[features])
+y = train_data["Survived"]
 
-# Logistic Regression Model
+# Standardize numerical features for better model performance
+scaler = StandardScaler()
+X[['Age', 'Fare', 'FamilySize']] = scaler.fit_transform(X[['Age', 'Fare', 'FamilySize']])
+X_test[['Age', 'Fare', 'FamilySize']] = scaler.transform(X_test[['Age', 'Fare', 'FamilySize']])
+
+# Logistic Regression Model with Cross-validation
 logistic_model = LogisticRegression(max_iter=1000, random_state=1)
+logistic_cv_score = cross_val_score(logistic_model, X, y, cv=5, scoring='accuracy').mean()
+
+# Gradient Boosting Model with GridSearchCV for Hyperparameter Tuning
+# Define parameter grid for optimization
+param_grid = {
+    'n_estimators': [100, 150, 200],
+    'learning_rate': [0.05, 0.1, 0.2],
+    'max_depth': [3, 4, 5]
+}
+grid_search = GridSearchCV(GradientBoostingClassifier(random_state=1), param_grid, cv=5, scoring='accuracy')
+grid_search.fit(X, y)
+
+# Best Gradient Boosting Model
+best_gb_model = grid_search.best_estimator_
+gradient_boosting_cv_score = grid_search.best_score_
+
+# Predictions on the test dataset using optimized models
 logistic_model.fit(X, y)
 logistic_predictions = logistic_model.predict(X_test)
 
-# Gradient Boosting Model
-gradient_boosting_model = GradientBoostingClassifier(n_estimators=100, learning_rate=0.1, max_depth=3, random_state=1)
-gradient_boosting_model.fit(X, y)
-gradient_boosting_predictions = gradient_boosting_model.predict(X_test)
+best_gb_model.fit(X, y)
+gradient_boosting_predictions = best_gb_model.predict(X_test)
 
 # Save predictions to CSV
 logistic_output = pd.DataFrame({'PassengerId': test_data.PassengerId, 'Survived': logistic_predictions})
@@ -33,12 +65,9 @@ logistic_output.to_csv('logistic_regression_submission.csv', index=False)
 gradient_boosting_output = pd.DataFrame({'PassengerId': test_data.PassengerId, 'Survived': gradient_boosting_predictions})
 gradient_boosting_output.to_csv('gradient_boosting_submission.csv', index=False)
 
-# Cross-validation scores for evaluation
-logistic_cv_score = cross_val_score(logistic_model, X, y, cv=5, scoring='accuracy').mean()
-gradient_boosting_cv_score = cross_val_score(gradient_boosting_model, X, y, cv=5, scoring='accuracy').mean()
-
 # Display results
 print("Logistic Regression submission saved as logistic_regression_submission.csv")
 print("Gradient Boosting submission saved as gradient_boosting_submission.csv")
 print(f"Logistic Regression CV Accuracy: {logistic_cv_score:.4f}")
-print(f"Gradient Boosting CV Accuracy: {gradient_boosting_cv_score:.4f}")
+print(f"Optimized Gradient Boosting CV Accuracy: {gradient_boosting_cv_score:.4f}")
+print("Best Gradient Boosting Model Parameters:", grid_search.best_params_)
