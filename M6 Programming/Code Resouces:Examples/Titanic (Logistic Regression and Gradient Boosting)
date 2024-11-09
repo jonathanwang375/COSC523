@@ -23,7 +23,7 @@ train_data['FamilySize'] = train_data['SibSp'] + train_data['Parch']
 test_data['FamilySize'] = test_data['SibSp'] + test_data['Parch']
 
 # Select features and one-hot encode categorical variables
-features = ["Pclass", "Sex", "SibSp", "Parch", "Fare", "Embarked", "FamilySize"]
+features = ["Pclass", "Sex", "SibSp", "Parch", "Fare", "Embarked", "FamilySize", "Age"]
 X = pd.get_dummies(train_data[features])
 X_test = pd.get_dummies(test_data[features])
 y = train_data["Survived"]
