@@ -2,8 +2,8 @@
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, StackingClassifier
-from sklearn.model_selection import GridSearchCV, cross_val_score
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, StackingClassifier, VotingClassifier
+from sklearn.model_selection import RandomizedSearchCV, cross_val_score
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.impute import SimpleImputer
 from xgboost import XGBClassifier
@@ -34,16 +34,16 @@ def preprocess_data(data):
     ticket_counts = data['Ticket'].value_counts()
     data['TicketFreq'] = data['Ticket'].map(ticket_counts)
     
-    # Bin Age and Fare
-    data['AgeBin'] = pd.qcut(data['Age'].fillna(data['Age'].median()), 4, labels=False)
+    # Feature Interactions and Binning
+    data['Age*Pclass'] = data['Age'] * data['Pclass']
     data['FareBin'] = pd.qcut(data['Fare'].fillna(data['Fare'].median()), 4, labels=False)
+    data['AgeBin'] = pd.qcut(data['Age'].fillna(data['Age'].median()), 4, labels=False)
     
     # Encode categorical features
     label_cols = ['Sex', 'Embarked', 'Deck', 'Title']
     for col in label_cols:
         data[col] = LabelEncoder().fit_transform(data[col].astype(str))
     
-    # Drop irrelevant columns
     return data.drop(['Name', 'Cabin', 'Ticket', 'Age', 'Fare', 'PassengerId'], axis=1, errors='ignore')
 
 # Apply preprocessing to training and test data
@@ -53,51 +53,59 @@ X, y = train_data.drop('Survived', axis=1), train_data['Survived']
 
 # Standardize Numerical Features
 scaler = StandardScaler()
-X[['FamilySize', 'TicketFreq', 'CabinCount']] = scaler.fit_transform(X[['FamilySize', 'TicketFreq', 'CabinCount']])
-test_data[['FamilySize', 'TicketFreq', 'CabinCount']] = scaler.transform(test_data[['FamilySize', 'TicketFreq', 'CabinCount']])
+X[['FamilySize', 'TicketFreq', 'CabinCount', 'Age*Pclass']] = scaler.fit_transform(X[['FamilySize', 'TicketFreq', 'CabinCount', 'Age*Pclass']])
+test_data[['FamilySize', 'TicketFreq', 'CabinCount', 'Age*Pclass']] = scaler.transform(test_data[['FamilySize', 'TicketFreq', 'CabinCount', 'Age*Pclass']])
 
 # Model Definitions with increased max_iter for LogisticRegression
-logistic_model = LogisticRegression(max_iter=2000, random_state=1)
+logistic_model = LogisticRegression(max_iter=3000, random_state=1)
 rf_model = RandomForestClassifier(random_state=1)
 gb_model = GradientBoostingClassifier(random_state=1)
 xgb_model = XGBClassifier(use_label_encoder=False, eval_metric='logloss', random_state=1)
 
-# Hyperparameter Tuning Function
-def tune_model(model, param_grid):
-    search = GridSearchCV(model, param_grid, cv=5, scoring='accuracy', n_jobs=-1)
+# Hyperparameter Tuning with RandomizedSearchCV for faster search over a wider parameter space
+def tune_model(model, param_dist, n_iter=15):
+    search = RandomizedSearchCV(model, param_dist, n_iter=n_iter, cv=5, scoring='accuracy', n_jobs=-1, random_state=1)
     search.fit(X, y)
     return search.best_estimator_
 
-# Parameter grids for tuning
-rf_params = {'n_estimators': [100, 200], 'max_depth': [5, 10, None], 'min_samples_split': [2, 5]}
-gb_params = {'n_estimators': [150, 200], 'learning_rate': [0.05, 0.1], 'max_depth': [3, 4, 5]}
-xgb_params = {'n_estimators': [100, 150], 'learning_rate': [0.05, 0.1], 'max_depth': [3, 4, 5]}
+# Parameter distributions for tuning
+rf_params = {'n_estimators': [100, 200, 300], 'max_depth': [5, 10, 15, None], 'min_samples_split': [2, 5, 10]}
+gb_params = {'n_estimators': [100, 150, 200], 'learning_rate': [0.01, 0.05, 0.1], 'max_depth': [3, 4, 5]}
+xgb_params = {'n_estimators': [100, 150, 200], 'learning_rate': [0.01, 0.05, 0.1], 'max_depth': [3, 4, 5]}
 
-# Tune and Evaluate Models Individually
-# Logistic Regression
-logistic_cv_score = cross_val_score(logistic_model, X, y, cv=5, scoring='accuracy').mean()
-
-# Gradient Boosting
+# Tune Random Forest, Gradient Boosting, and XGBoost models
+best_rf_model = tune_model(rf_model, rf_params)
 best_gb_model = tune_model(gb_model, gb_params)
-gb_cv_score = cross_val_score(best_gb_model, X, y, cv=5, scoring='accuracy').mean()
-
-# XGBoost
 best_xgb_model = tune_model(xgb_model, xgb_params)
-xgb_cv_score = cross_val_score(best_xgb_model, X, y, cv=5, scoring='accuracy').mean()
 
-# Stacking Ensemble Model with Optimized Models
+# Ensemble Model with Voting and Stacking
+voting_model = VotingClassifier(
+    estimators=[('logistic', logistic_model), ('rf', best_rf_model), ('gb', best_gb_model), ('xgb', best_xgb_model)],
+    voting='soft'
+)
+
+# Stacking Model with Voting as Meta-Estimator
 stacking_model = StackingClassifier(
-    estimators=[('logistic', logistic_model), ('gb', best_gb_model), ('xgb', best_xgb_model)],
+    estimators=[('voting', voting_model)],
     final_estimator=RandomForestClassifier(n_estimators=100, random_state=1),
     cv=5
 )
+
+# Evaluate Individual and Ensemble Model CV Accuracies
+logistic_cv_score = cross_val_score(logistic_model, X, y, cv=5, scoring='accuracy').mean()
+gb_cv_score = cross_val_score(best_gb_model, X, y, cv=5, scoring='accuracy').mean()
+xgb_cv_score = cross_val_score(best_xgb_model, X, y, cv=5, scoring='accuracy').mean()
+rf_cv_score = cross_val_score(best_rf_model, X, y, cv=5, scoring='accuracy').mean()
+voting_cv_score = cross_val_score(voting_model, X, y, cv=5, scoring='accuracy').mean()
 stacking_cv_score = cross_val_score(stacking_model, X, y, cv=5, scoring='accuracy').mean()
 
 # Display CV Accuracies
 print(f"Logistic Regression CV Accuracy: {logistic_cv_score:.4f}")
+print(f"Optimized Random Forest CV Accuracy: {rf_cv_score:.4f}")
 print(f"Optimized Gradient Boosting CV Accuracy: {gb_cv_score:.4f}")
 print(f"Optimized XGBoost CV Accuracy: {xgb_cv_score:.4f}")
-print(f"Ensemble Model CV Accuracy: {stacking_cv_score:.4f}")
+print(f"Voting Ensemble CV Accuracy: {voting_cv_score:.4f}")
+print(f"Stacking Ensemble CV Accuracy: {stacking_cv_score:.4f}")
 
 # Train Final Stacking Model on Full Data and Make Predictions for Submission
 stacking_model.fit(X, y)
