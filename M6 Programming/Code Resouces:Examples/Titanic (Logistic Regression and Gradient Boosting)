@@ -5,33 +5,36 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.model_selection import cross_val_score, GridSearchCV
 from sklearn.preprocessing import StandardScaler
+import matplotlib.pyplot as plt
+import seaborn as sns
 import os
+
+# Set Seaborn style
+sns.set(style="whitegrid")
 
 # Load Data
 train_data = pd.read_csv("/kaggle/input/titanic/train.csv")
 test_data = pd.read_csv("/kaggle/input/titanic/test.csv")
 
 # Feature Engineering
-# Fill missing values for 'Age' with median, 'Embarked' with mode, and 'Fare' with median
-train_data['Age'].fillna(train_data['Age'].median(), inplace=True)
+# Fill missing values for 'Embarked' with mode and 'Fare' with median
 train_data['Embarked'].fillna(train_data['Embarked'].mode()[0], inplace=True)
-test_data['Age'].fillna(test_data['Age'].median(), inplace=True)
 test_data['Fare'].fillna(test_data['Fare'].median(), inplace=True)
 
-# Convert categorical features and engineer new features
+# Create 'FamilySize' feature
 train_data['FamilySize'] = train_data['SibSp'] + train_data['Parch']
 test_data['FamilySize'] = test_data['SibSp'] + test_data['Parch']
 
-# Select features and one-hot encode categorical variables
-features = ["Pclass", "Sex", "SibSp", "Parch", "Fare", "Embarked", "FamilySize", "Age"]
+# Drop 'Age' from features
+features = ["Pclass", "Sex", "SibSp", "Parch", "Fare", "Embarked", "FamilySize"]
 X = pd.get_dummies(train_data[features])
 X_test = pd.get_dummies(test_data[features])
 y = train_data["Survived"]
 
 # Standardize numerical features for better model performance
 scaler = StandardScaler()
-X[['Age', 'Fare', 'FamilySize']] = scaler.fit_transform(X[['Age', 'Fare', 'FamilySize']])
-X_test[['Age', 'Fare', 'FamilySize']] = scaler.transform(X_test[['Age', 'Fare', 'FamilySize']])
+X[['Fare', 'FamilySize']] = scaler.fit_transform(X[['Fare', 'FamilySize']])
+X_test[['Fare', 'FamilySize']] = scaler.transform(X_test[['Fare', 'FamilySize']])
 
 # Logistic Regression Model with Cross-validation
 logistic_model = LogisticRegression(max_iter=1000, random_state=1)
@@ -71,3 +74,28 @@ print("Gradient Boosting submission saved as gradient_boosting_submission.csv")
 print(f"Logistic Regression CV Accuracy: {logistic_cv_score:.4f}")
 print(f"Optimized Gradient Boosting CV Accuracy: {gradient_boosting_cv_score:.4f}")
 print("Best Gradient Boosting Model Parameters:", grid_search.best_params_)
+
+# Visualization Section
+
+# 1. Survival Rates by Gender and Class
+plt.figure(figsize=(10, 5))
+sns.barplot(data=train_data, x="Sex", y="Survived", hue="Pclass")
+plt.title("Survival Rates by Gender and Class")
+plt.show()
+
+# 2. Fare Distribution by Survival Status
+plt.figure(figsize=(10, 5))
+sns.histplot(train_data[train_data["Survived"] == 1]["Fare"], bins=30, kde=True, color="blue", label="Survived")
+sns.histplot(train_data[train_data["Survived"] == 0]["Fare"], bins=30, kde=True, color="orange", label="Not Survived")
+plt.legend()
+plt.title("Fare Distribution by Survival Status")
+plt.show()
+
+# 3. Feature Importance from the Optimized Gradient Boosting Model
+feature_importances = pd.Series(best_gb_model.feature_importances_, index=X.columns)
+feature_importances = feature_importances.sort_values(ascending=False)
+
+plt.figure(figsize=(10, 5))
+sns.barplot(x=feature_importances, y=feature_importances.index)
+plt.title("Feature Importance in Gradient Boosting Model")
+plt.show()
