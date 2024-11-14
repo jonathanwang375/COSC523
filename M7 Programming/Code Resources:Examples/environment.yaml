@@ -1,0 +1,18 @@
+name: cosc523_m7proj
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10.12
+  - jupyter
+  - numpy<=2.0
+  - pandas
+  - scikit-learn
+  - matplotlib
+  - seaborn
+  - pip
+  - pip:
+      - keras-core
+      - keras_nlp==0.6.4
+      - tensorflow
+      - tensorflow-text
